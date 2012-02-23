@@ -4,11 +4,19 @@ import(
 	"net"
 	"url"
 	"fmt"
+	"strings"
 )
 
 const(
 	Empty_line = "\r\n"
 )
+
+type HttpClient struct{
+	connectTimeout int
+	readTimeout int
+	writeTimeout int
+	remoteIp string
+}
 
 func postBody(parameterMap *map[string]string)string{
 	postBody := ""
@@ -55,22 +63,38 @@ func recv(tcpConn *net.TCPConn)string{
 	return result
 }
 
-func resolveAddr(ip, path *string) *net.TCPAddr{
-	host := ip
-	if host == nil {
-		url,_ := url.Parse(*path)
-		host = &url.Host
+func appendPort(host string)string{
+	result := ""
+	index := strings.Index(host, ":")
+	if index == -1{
+		result = host + ":80"
 	}
-	addr,_ := net.ResolveTCPAddr("tcp4", *host)
+	if index == (len(host)-1) {
+		result = host + "80"
+	}
+	return result
+}
+
+func resolveAddr(ip, path string) *net.TCPAddr{
+	host := ip
+	if  len(host) == 0{
+		url,_ := url.Parse(path)
+		host = url.Host
+	}
+	host = appendPort(host)
+	addr,_ := net.ResolveTCPAddr("tcp4", host)
 	return addr
 }
 
-func do(ip, path, method string, headerMap, parameterMap *map[string]string)string {
-	req := method+" "+path+"\r\n"
+func (c *HttpClient)SetRemoteIp(ip string){
+	c.remoteIp = ip
+}
+
+func (c *HttpClient)do(url, method string, headerMap, parameterMap *map[string]string)string {
+	req := method+" "+url+"\r\n"
 	req += headers(headerMap)
 	req += postBody(parameterMap)
-	fmt.Println(req)
-	addr := resolveAddr(&ip, &path)
+	addr := resolveAddr(c.remoteIp, url)
 	tcpConn, err := net.DialTCP("tcp4", nil, addr)
 	defer tcpConn.Close()
 	if err == nil{
@@ -80,10 +104,14 @@ func do(ip, path, method string, headerMap, parameterMap *map[string]string)stri
 	return ""
 }
 
-func Post(ip, path string, headerMap, parameterMap *map[string]string)string{
-	return do(ip, path, "POST", headerMap, parameterMap)
+func (c *HttpClient)Post(url string, headerMap, parameterMap *map[string]string)string{
+	return c.do(url, "POST", headerMap, parameterMap)
 }
 
-func Get(ip, path string, headerMap *map[string]string)string{
-	return do(ip, path, "GET", headerMap, nil)
+func (c *HttpClient)Get(url string, headerMap *map[string]string)string{
+	return c.do(url, "GET", headerMap, nil)
+}
+
+func CreateHttpClient(connectTimeout, readTimeout, writeTimeout int)(*HttpClient){
+	return &HttpClient{connectTimeout:connectTimeout, readTimeout:readTimeout, writeTimeout:writeTimeout}
 }
